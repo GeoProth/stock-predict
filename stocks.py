@@ -29,6 +29,8 @@ dfs = [import_csv(csv_path) for csv_path in filenames]
 
 df = pd.concat(dfs, axis=0, ignore_index=True)
 
+df = df.sort_values(by='Date')
+
 print(df.head())
 
 print(df.tail())
