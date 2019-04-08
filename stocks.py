@@ -27,9 +27,7 @@ def import_csv(csv_path):
 
 dfs = [import_csv(csv_path) for csv_path in filenames]
 
-df = pd.concat(dfs)
-
-
+df = pd.concat(dfs, axis=0, ignore_index=True)
 
 print(df.head())
 
