@@ -67,13 +67,17 @@ diff_min = min[['Symbol', 'Open']].set_index('Symbol')
 common = diff_max.merge(diff_min, on=['Symbol'])
 #print(common.head())
 common['ROI'] = common['Close'] - common['Open']
-common = common[['Open', 'Close', 'ROI']]
-common.rename(columns={'Open': 'Open_first_day', 'Close': 'Close_Final_day', 'ROI': 'Total ROI'}, inplace=True)
+common['Tot % Chg'] = (common['ROI'] / common['Open']) * 100
+common = common[['Open', 'Close', 'ROI', 'Tot % Chg']]
+common.rename(columns={'Open': 'Open_first_day', 'Close': 'Close_Final_day', 'ROI': 'Total ROI', 'Tot % Chg': 'Tot % Chg'}, inplace=True)
 common = common.sort_values('Total ROI', ascending=False)
 print()
-print("RETURN ON INVESTMENT: ")
+print("RETURN ON INVESTMENT BY MONEY: ")
 print(common.head())
 
+common = common.sort_values("Tot % Chg", ascending=False)
+print("RETURN ON INVESTMENT BY % CHANGE:")
+print(common.head())
 #find values that were deleted in the merge because they don't exist in both DFs
 #not_common = diff_max[(~diff_max.index.isin(common.index))]
 #print(not_common)
@@ -86,5 +90,5 @@ print("This shows: BRKA, AMZN, CMG as the best ROI from start date to end date")
 print("This leaves out some Stock companies though, because some companies")
 print("do not exist at both the beginning dates and end dates")
 print("but this is still useful")
-print("Number of stocks left out of this report:")
-print(len(symbols) - len(common.index))
+print("Number of stocks left out of this report:", len(symbols) - len(common.index))
+#rint(len(symbols) - len(common.index))
