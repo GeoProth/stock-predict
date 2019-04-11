@@ -68,20 +68,35 @@ common = diff_max.merge(diff_min, on=['Symbol'])
 #print(common.head())
 common['ROI'] = common['Close'] - common['Open']
 common['Tot % Chg'] = (common['ROI'] / common['Open']) * 100
+#total amount available to invest = 10000 - 5 for broker fee
 common = common[['Open', 'Close', 'ROI', 'Tot % Chg']]
 common.rename(columns={'Open': 'Open_first_day', 'Close': 'Close_Final_day', 'ROI': 'Total ROI', 'Tot % Chg': 'Tot % Chg'}, inplace=True)
 common = common.sort_values('Total ROI', ascending=False)
+
+#amount of buying power after $5 broker fee
+invest = 10000 - 5
+common['$Owned'] = invest
+
+#this column represents how much money is left over after purchasing stocks
+common['$Left'] = common['$Owned'] % common['Open_first_day']
+#this column represents how many shares you can purchase evenly
+common['Shares'] = (common['$Owned'] - common['$Left']) / common['Open_first_day']
+
+#this column represents how much your shares are worth at closing day per share
+common['$ClosingWorthPerShare'] = (common['Shares'] / (common['Tot % Chg'] / 100))
+common['$ClosingWorthPerShare'] = round((common['Shares'] + common['$ClosingWorthPerShare']), 2)
+
+common['$TotalProfit'] = (common['Shares'] * common['$ClosingWorthPerShare']) - 5
+
 print()
-print("RETURN ON INVESTMENT BY MONEY: ")
-print(common.head())
 
 common = common.sort_values("Tot % Chg", ascending=False)
 print("RETURN ON INVESTMENT BY % CHANGE:")
 print(common.head())
+print(common.tail())
 #find values that were deleted in the merge because they don't exist in both DFs
 #not_common = diff_max[(~diff_max.index.isin(common.index))]
 #print(not_common)
-
 print("I created a dataframe with starting dates and unique Stock Symbols")
 print("along with another dataframe with ending dates and unique stock Symbols")
 print("Then took the difference of the Open prices on the starting day, and")
@@ -91,4 +106,3 @@ print("This leaves out some Stock companies though, because some companies")
 print("do not exist at both the beginning dates and end dates")
 print("but this is still useful")
 print("Number of stocks left out of this report:", len(symbols) - len(common.index))
-#rint(len(symbols) - len(common.index))
