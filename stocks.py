@@ -7,6 +7,13 @@ from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import metrics
+from sklearn.model_selection import train_test_split
+from sklearn import linear_model
+from sklearn.metrics import confusion_matrix
+from imblearn.over_sampling import SMOTE
+from sklearn.feature_selection import RFE
+from sklearn.linear_model import LogisticRegression
+import statsmodels.api as sm
 import pandas as pd
 import glob
 import numpy as np
@@ -18,7 +25,6 @@ pd.set_option('display.width', 1000)
 
 # File Path
 filenames = glob.glob('stocks/*.csv')
-
 
 def import_csv(csv_path):
     missing_values = ['na', '...'] #data has missing values as ... (must replace)
@@ -39,7 +45,8 @@ def import_csv(csv_path):
 dfs = [import_csv(csv_path) for csv_path in filenames]
 df = pd.concat(dfs, axis=0, ignore_index=True)
 df = df.sort_values(['Symbol', 'Date'])
-
+df['Week_Number'] = df['Date'].dt.week
+df['Day'] = df['Day'].map({'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5})
 #get rid of  columns with minimal data
 # Columns [Div, Yield, P/E,
 df = df.drop(['Div', 'Yield', 'P/E'], axis=1)
@@ -50,11 +57,18 @@ df = df.apply(lambda x: x.fillna(0) if x.dtype.kind in 'biufc' else x.fillna('.'
 #get list of unique Symbols on the stock market and sort them
 symbols = df['Symbol'].unique()
 symbols.sort()
+stocks = df.copy()
+
+#------------------------------------------------------------------------------------------
+    #this section is for determining the Top 3 Stocks from start date to end date
+
+print("starting Date: ", df['Date'].min())
+print("Ending Date: ", df['Date'].max())
+
 #print(df.head())
 print("number of different Stock companies:", len(symbols))
 #print(symbols)
-print("starting Date: ", df['Date'].min())
-print("Ending Date: ", df['Date'].max())
+
 
 #lets try and find the minimun date for each unique symbol
 min = df.loc[df['Date'] == df['Date'].min()]
@@ -87,6 +101,7 @@ common['$ClosingWorthPerShare'] = (common['Shares'] / (common['Tot % Chg'] / 100
 common['$ClosingWorthPerShare'] = round((common['Shares'] + common['$ClosingWorthPerShare']), 2)
 
 common['$TotalProfit'] = (common['Shares'] * common['$ClosingWorthPerShare']) - 5
+common['$TotalProfit'] = common['$TotalProfit'].map('{:,.2f}'.format)
 
 print()
 
@@ -106,3 +121,63 @@ print("This leaves out some Stock companies though, because some companies")
 print("do not exist at both the beginning dates and end dates")
 print("but this is still useful")
 print("Number of stocks left out of this report:", len(symbols) - len(common.index))
+
+
+#------------------------------------------------------------------------------------------------------------------
+
+    #This section is for prediction algorithms
+'''
+#stocks is our new data set
+#symbols is a list of unique symbols for stocks
+stocks = stocks.sort_values('Date')
+stocks = stocks.drop(['YTD % Chg', '% Chg', 'Name'], axis=1)
+stocks['Month'] = stocks['Date'].dt.month
+stocks = stocks[['Market', 'Symbol', 'Day', 'Month', 'Date', 'Week_Number', 'Open', 'High', 'Low', 'Volume',
+                 '52 Wk High', '52 Wk Low', 'Close']]
+
+print(stocks.head(10))
+
+df = pd.pivot_table(stocks, index=['Symbol', 'Date'])
+
+print(df.head())
+
+print(df.tail())
+
+df = df.sort_values('Date')
+
+print(df.head(50))
+
+y = stocks[['Close']]
+stocks = stocks.drop(['Date', 'Market', 'Close', 'Volume'], axis=1)
+
+#stocks = pd.get_dummies(data=stocks, columns=['Symbol'])
+
+
+
+print(stocks.head())
+print(stocks.shape)
+print(y.head())
+
+X = stocks.copy().astype(float)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.8, random_state=0)
+
+lm = linear_model.LinearRegression()
+
+model = lm.fit(X_train, y_train)
+
+predictions = list(lm.predict(X_test))
+
+y_test_list = list(y_test)
+
+correct = 0
+for x in range(len(predictions)):
+    value1 = predictions[x]
+    value2 = y_test_list[x]
+    if(abs(value1 - value2) <= 3):
+        correct += 1
+
+results = str(correct) + "/" + str(len(predictions))
+print("Linear regression: ", results)
+#y_train = stocks[[]]
+'''
