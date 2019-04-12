@@ -14,6 +14,8 @@ from imblearn.over_sampling import SMOTE
 from sklearn.feature_selection import RFE
 from sklearn.linear_model import LogisticRegression
 import statsmodels.api as sm
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
 import glob
 import numpy as np
@@ -45,8 +47,9 @@ def import_csv(csv_path):
 dfs = [import_csv(csv_path) for csv_path in filenames]
 df = pd.concat(dfs, axis=0, ignore_index=True)
 df = df.sort_values(['Symbol', 'Date'])
-df['Week_Number'] = df['Date'].dt.week
-df['Day'] = df['Day'].map({'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5})
+df['Week_Num'] = df['Date'].dt.week
+df['Day_Num'] = df['Day'].map({'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5})
+df['Month'] = df['Date'].dt.month
 #get rid of  columns with minimal data
 # Columns [Div, Yield, P/E,
 df = df.drop(['Div', 'Yield', 'P/E'], axis=1)
@@ -126,58 +129,106 @@ print("Number of stocks left out of this report:", len(symbols) - len(common.ind
 #------------------------------------------------------------------------------------------------------------------
 
     #This section is for prediction algorithms
-'''
+
+#for normalizing data
+scaler = MinMaxScaler(feature_range=(0, 1))
+
 #stocks is our new data set
 #symbols is a list of unique symbols for stocks
 stocks = stocks.sort_values('Date')
-stocks = stocks.drop(['YTD % Chg', '% Chg', 'Name'], axis=1)
-stocks['Month'] = stocks['Date'].dt.month
-stocks = stocks[['Market', 'Symbol', 'Day', 'Month', 'Date', 'Week_Number', 'Open', 'High', 'Low', 'Volume',
-                 '52 Wk High', '52 Wk Low', 'Close']]
+#reorganize this for better visualization
+stocks = stocks[['Date', 'Symbol', 'Month', 'Day_Num', 'Week_Num', 'Open', 'High', 'Low', 'Volume',
+               '52 Wk Low', '52 Wk High', 'Close']]
 
-print(stocks.head(10))
-
-df = pd.pivot_table(stocks, index=['Symbol', 'Date'])
-
-print(df.head())
-
-print(df.tail())
-
-df = df.sort_values('Date')
-
-print(df.head(50))
-
-y = stocks[['Close']]
-stocks = stocks.drop(['Date', 'Market', 'Close', 'Volume'], axis=1)
-
-#stocks = pd.get_dummies(data=stocks, columns=['Symbol'])
-
-
+#change ints to floats for analysis
+stocks['Month'] = stocks['Month'].astype(float)
+stocks['Day_Num'] = stocks['Day_Num'].astype(float)
+stocks['Week_Num'] = stocks['Week_Num'].astype(float)
+#set Date as index
+stocks.index = stocks['Date']
+stocks = stocks.drop(['Date'], axis=1)
+#convert Volume to int
+stocks['Volume'] = stocks['Volume'].str.replace(',', '')
+stocks['Volume'] =stocks['Volume'].astype(float)
 
 print(stocks.head())
-print(stocks.shape)
-print(y.head())
+#Separate Data Frames that represent top 3 stocks
+sdlr = stocks.loc[stocks['Symbol'] == 'SDRL']
+epix = stocks.loc[stocks['Symbol'] == 'EPIX']
+hear = stocks.loc[stocks['Symbol'] == 'HEAR']
 
-X = stocks.copy().astype(float)
+'''
+#plot these 3 stock closing prices from start to finish
+sdlr['Close'].plot(label='SDLR', figsize=(14, 6), title='Closing Prices')
+epix['Close'].plot(label='EPIX')
+hear['Close'].plot(label='HEAR')
+plt.xlabel('Date')
+plt.ylabel('Closing Price')
+plt.legend()
+plt.show()
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=.8, random_state=0)
 
-lm = linear_model.LinearRegression()
+#plot these 3 stock volumes from start to finish
 
-model = lm.fit(X_train, y_train)
+sdlr['Volume'].plot(label='SDLR', figsize=(14, 6), title='Volume Traded')
+epix['Volume'].plot(label='EPIX')
+hear['Volume'].plot(label='HEAR')
+plt.xlabel('Date')
+plt.ylabel('Volume')
+plt.legend()
+plt.show()
+'''
 
-predictions = list(lm.predict(X_test))
+#pick favorite stocks for analysis
+etsy = stocks.loc[stocks['Symbol'] == 'ETSY']
+ntflx = stocks.loc[stocks['Symbol'] == 'NFLX']
+amzn = stocks.loc[stocks['Symbol'] == 'AMZN']
+print(len(etsy.index))
 
-y_test_list = list(y_test)
+features = ['Month', 'Day_Num', 'Week_Num', 'Open', 'High', 'Low', 'Volume', '52 Wk Low', '52 Wk High']
+
+#split data for training and testing 8/20
+def split_data(df):
+    train = df[:156]
+    test = df[156:]
+    response = [train, test]
+    return response
+
+train, test = split_data(etsy)
+
+X_train = train.drop(['Symbol', 'Close'], axis=1)
+Y_train = train['Close']
+X_test = test.drop(['Symbol', 'Close'], axis=1)
+Y_test = test['Close']
+
+#implement Linear Regression
+lr = linear_model.LinearRegression()
+lr.fit(X_train, Y_train)
+
+preds = list(lr.predict(X_test))
+#print(preds)
+compare = list(Y_test)
+#print(compare)
 
 correct = 0
-for x in range(len(predictions)):
-    value1 = predictions[x]
-    value2 = y_test_list[x]
-    if(abs(value1 - value2) <= 3):
+for x in range(len(compare)):
+    value1 = compare[x]
+    value2 = preds[x]
+    if(abs(value1 - value2) <= 1):
         correct += 1
 
-results = str(correct) + "/" + str(len(predictions))
-print("Linear regression: ", results)
-#y_train = stocks[[]]
-'''
+results = str(correct) + "/" + str(len(compare))
+print("Linear regression Preds: ", results)
+
+#Plot
+print(preds)
+test['Predictions'] = preds.copy()
+print(test.head())
+
+train['Close'].plot(label='train(Etsy)', figsize=(14, 6), title='Linear Regression (ETSY)')
+test['Close'].plot(label='test(Etsy)')
+test['Predictions'].plot(label='Predictions')
+plt.xlabel('Date')
+plt.ylabel('Closing Prices')
+plt.legend()
+plt.show()
