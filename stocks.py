@@ -1,21 +1,16 @@
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.feature_extraction import text
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn import metrics
-from sklearn.model_selection import train_test_split
 from sklearn import linear_model
 from sklearn.metrics import confusion_matrix
-from imblearn.over_sampling import SMOTE
-from sklearn.feature_selection import RFE
 from sklearn.linear_model import LogisticRegression
-import statsmodels.api as sm
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import MLPClassifier
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import pandas as pd
 import glob
 import numpy as np
@@ -30,7 +25,7 @@ filenames = glob.glob('stocks/*.csv')
 
 def import_csv(csv_path):
     missing_values = ['na', '...'] #data has missing values as ... (must replace)
-    df = pd.read_csv(csv_path, na_values=missing_values)
+    df1 = pd.read_csv(csv_path, na_values=missing_values)
     index = csv_path.find('-')
     date = csv_path[index+1:-4]
     day = date[:date.find('-')]
@@ -39,80 +34,88 @@ def import_csv(csv_path):
     count = date.count('-')
     if count > 2:
         date = date[:-8]
-    df['Date'], df['Day'], df['Market'] = pd.to_datetime(date), day, market
-    return df
+    df1['Date'], df1['Day'], df1['Market'] = pd.to_datetime(date), day, market
+    return df1
 
 
 # read in all files, concat and sort
-dfs = [import_csv(csv_path) for csv_path in filenames]
-df = pd.concat(dfs, axis=0, ignore_index=True)
-df = df.sort_values(['Symbol', 'Date'])
-df['Week_Num'] = df['Date'].dt.week
-df['Day_Num'] = df['Day'].map({'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5})
-df['Month'] = df['Date'].dt.month
+df1s = [import_csv(csv_path) for csv_path in filenames]
+df1 = pd.concat(df1s, axis=0, ignore_index=True)
+df1 = df1.sort_values(['Symbol', 'Date'])
+df1['Week_Num'] = df1['Date'].dt.week
+df1['Day_Num'] = df1['Day'].map({'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5})
+df1['Month'] = df1['Date'].dt.month
 #get rid of  columns with minimal data
 # Columns [Div, Yield, P/E,
-df = df.drop(['Div', 'Yield', 'P/E'], axis=1)
+df1 = df1.drop(['Div', 'Yield', 'P/E'], axis=1)
 
 #fill na's and missing values in entire dataset
-df = df.apply(lambda x: x.fillna(0) if x.dtype.kind in 'biufc' else x.fillna('.'))
+df1 = df1.apply(lambda x: x.fillna(0) if x.dtype.kind in 'biufc' else x.fillna('.'))
 
 #get list of unique Symbols on the stock market and sort them
-symbols = df['Symbol'].unique()
+symbols = df1['Symbol'].unique()
 symbols.sort()
-stocks = df.copy()
+stocks = df1.copy()
+
 
 #------------------------------------------------------------------------------------------
     #this section is for determining the Top 3 Stocks from start date to end date
 
-print("starting Date: ", df['Date'].min())
-print("Ending Date: ", df['Date'].max())
+print("starting Date: ", df1['Date'].min())
+print("Ending Date: ", df1['Date'].max())
 
-#print(df.head())
+#print(df1.head())
 print("number of different Stock companies:", len(symbols))
 #print(symbols)
 
+def stock_eval(df):
+    #lets try and find the minimun date for each unique symbol
+    min = df.loc[df['Date'] == df['Date'].min()]
+    #now maximum date for each unique symbol
+    max = df.loc[df['Date'] == df['Date'].max()]
+    
+    diff_max = max[['Symbol', 'Close']].set_index('Symbol')
+    diff_min = min[['Symbol', 'Open']].set_index('Symbol')
+    #remove rows not in min and merge
+    common = diff_max.merge(diff_min, on=['Symbol'])
+    #print(common.head())
+    common['ROI'] = common['Close'] - common['Open']
+    common['Tot % Chg'] = (common['ROI'] / common['Open']) * 100
+    #total amount available to invest = 10000 - 5 for broker fee
+    common = common[['Open', 'Close', 'ROI', 'Tot % Chg']]
+    common.rename(columns={'Open': 'Open_first_day', 'Close': 'Close_Final_day', 'ROI': '$ Increase', 'Tot % Chg': 'Tot % Chg'}, inplace=True)
+    common = common.sort_values('$ Increase', ascending=False)
+    
+    #amount of buying power after $5 broker fee
+    invest = 10000 - 5
+    common['$Owned'] = invest
+    
+    #this column represents how much money is left over after purchasing stocks
+    common['$Left'] = common['$Owned'] % common['Open_first_day']
+    #this column represents how many shares you can purchase evenly
+    common['Shares'] = (common['$Owned'] - common['$Left']) / common['Open_first_day']
+    
+    #this column represents how much your shares are worth at closing day per share
+    #common['$ClosingWorthPerShare'] = (common['Shares'] / (common['Tot % Chg'] / 100))
+    #common['$ClosingWorthPerShare'] = round((common['Shares'] + common['$ClosingWorthPerShare']), 2)
+    
+    common['$TotalProfit'] = (common['Shares'] * common['Close_Final_day']) - 5
+    common['$TotalProfit'] = common['$TotalProfit'].map('{:,.2f}'.format)
+    return common
 
-#lets try and find the minimun date for each unique symbol
-min = df.loc[df['Date'] == df['Date'].min()]
-#now maximum date for each unique symbol
-max = df.loc[df['Date'] == df['Date'].max()]
 
-diff_max = max[['Symbol', 'Close']].set_index('Symbol')
-diff_min = min[['Symbol', 'Open']].set_index('Symbol')
-#remove rows not in min and merge
-common = diff_max.merge(diff_min, on=['Symbol'])
-#print(common.head())
-common['ROI'] = common['Close'] - common['Open']
-common['Tot % Chg'] = (common['ROI'] / common['Open']) * 100
-#total amount available to invest = 10000 - 5 for broker fee
-common = common[['Open', 'Close', 'ROI', 'Tot % Chg']]
-common.rename(columns={'Open': 'Open_first_day', 'Close': 'Close_Final_day', 'ROI': 'Total ROI', 'Tot % Chg': 'Tot % Chg'}, inplace=True)
-common = common.sort_values('Total ROI', ascending=False)
 
-#amount of buying power after $5 broker fee
-invest = 10000 - 5
-common['$Owned'] = invest
-
-#this column represents how much money is left over after purchasing stocks
-common['$Left'] = common['$Owned'] % common['Open_first_day']
-#this column represents how many shares you can purchase evenly
-common['Shares'] = (common['$Owned'] - common['$Left']) / common['Open_first_day']
-
-#this column represents how much your shares are worth at closing day per share
-common['$ClosingWorthPerShare'] = (common['Shares'] / (common['Tot % Chg'] / 100))
-common['$ClosingWorthPerShare'] = round((common['Shares'] + common['$ClosingWorthPerShare']), 2)
-
-common['$TotalProfit'] = (common['Shares'] * common['$ClosingWorthPerShare']) - 5
-common['$TotalProfit'] = common['$TotalProfit'].map('{:,.2f}'.format)
-
+print("SORTED BY INCREASE IN STOCK PRICE:")
+common = stock_eval(df1)
+print(common.head())
+print(common.tail())
 print()
 
 common = common.sort_values("Tot % Chg", ascending=False)
 print("RETURN ON INVESTMENT BY % CHANGE:")
 print(common.head())
 print(common.tail())
-#find values that were deleted in the merge because they don't exist in both DFs
+#find values that were deleted in the merge because they don't exist in both df1s
 #not_common = diff_max[(~diff_max.index.isin(common.index))]
 #print(not_common)
 print("I created a dataframe with starting dates and unique Stock Symbols")
@@ -129,9 +132,6 @@ print("Number of stocks left out of this report:", len(symbols) - len(common.ind
 #------------------------------------------------------------------------------------------------------------------
 
     #This section is for prediction algorithms
-
-#for normalizing data
-scaler = MinMaxScaler(feature_range=(0, 1))
 
 #stocks is our new data set
 #symbols is a list of unique symbols for stocks
@@ -151,7 +151,8 @@ stocks = stocks.drop(['Date'], axis=1)
 stocks['Volume'] = stocks['Volume'].str.replace(',', '')
 stocks['Volume'] =stocks['Volume'].astype(float)
 
-print(stocks.head())
+
+#print(stocks.head())
 #Separate Data Frames that represent top 3 stocks
 sdlr = stocks.loc[stocks['Symbol'] == 'SDRL']
 epix = stocks.loc[stocks['Symbol'] == 'EPIX']
@@ -177,22 +178,43 @@ plt.xlabel('Date')
 plt.ylabel('Volume')
 plt.legend()
 plt.show()
+#-----------------------------------------------------------------------------------------------
+
 '''
+
+top_3 = df1.loc[(df1['Symbol'] == 'ETSY') | (df1['Symbol'] == 'NFLX') | (df1['Symbol'] == 'AMZN')]
+
+print(top_3.head())
+
+returns = stock_eval(top_3)
+print()
+print("RETURN ON INVESTMENT FROM TOP PICKS: ")
+print(returns)
 
 #pick favorite stocks for analysis
 etsy = stocks.loc[stocks['Symbol'] == 'ETSY']
 ntflx = stocks.loc[stocks['Symbol'] == 'NFLX']
 amzn = stocks.loc[stocks['Symbol'] == 'AMZN']
-print(len(etsy.index))
+#print(len(etsy.index))
 
-features = ['Month', 'Day_Num', 'Week_Num', 'Open', 'High', 'Low', 'Volume', '52 Wk Low', '52 Wk High']
+
+def correct(preds, compare):
+    correct = 0
+    for x in range(len(compare)):
+        value1 = compare[x]
+        value2 = preds[x]
+        if abs(value1 - value2) <= 1:
+            correct += 1
+    results = str(correct) + "/" + str(len(compare))
+    return results
 
 #split data for training and testing 8/20
-def split_data(df):
-    train = df[:156]
-    test = df[156:]
+def split_data(df1):
+    train = df1[:156]
+    test = df1[156:]
     response = [train, test]
     return response
+
 
 train, test = split_data(etsy)
 
@@ -201,34 +223,161 @@ Y_train = train['Close']
 X_test = test.drop(['Symbol', 'Close'], axis=1)
 Y_test = test['Close']
 
-#implement Linear Regression
+#----------------------------------------------------------
+    #implement Linear Regression
+lr = linear_model.LinearRegression()
+lr.fit(X_train, Y_train)
+
+test['Predictions'] = lr.predict(X_test)
+
+#print(preds)
+compare = list(Y_test)
+#print(compare)
+
+# ADD HOLT WINTERS SMOOTHING
+#print(test.head())
+model = ExponentialSmoothing(train['Close'], seasonal_periods=114, seasonal='add').fit()
+pred = list(model.predict(start=len(train), end=195))
+
+print(pred)
+print(len(pred))
+test['Holt_Winter'] = pred
+
+train['Close'].plot(label='train data', figsize=(14, 6), title='ETSY')
+test['Close'].plot(label='Actual Closing price')
+test['Predictions'].plot(label='Linear Regression Preds')
+#test['Holt_Winter'].plot(label='Holt-Winter Pred')
+test['Holt_Winter'].plot(label='Holt_Winter Preds')
+plt.xlabel('Date')
+plt.ylabel('Closing Prices')
+plt.legend(loc='best')
+plt.show()
+
+
+#---------------------------------------------------------------------------------------
+    #AMAZON
+
+train, test = split_data(amzn)
+
+X_train = train.drop(['Symbol', 'Close'], axis=1)
+Y_train = train['Close']
+X_test = test.drop(['Symbol', 'Close'], axis=1)
+Y_test = test['Close']
+
+#-----------------------------------------------------------
+    #implement Linear Regression
 lr = linear_model.LinearRegression()
 lr.fit(X_train, Y_train)
 
 preds = list(lr.predict(X_test))
 #print(preds)
-compare = list(Y_test)
-#print(compare)
 
-correct = 0
-for x in range(len(compare)):
-    value1 = compare[x]
-    value2 = preds[x]
-    if(abs(value1 - value2) <= 1):
-        correct += 1
-
-results = str(correct) + "/" + str(len(compare))
-print("Linear regression Preds: ", results)
+model = ExponentialSmoothing(train['Close'], seasonal_periods=36, seasonal='add').fit()
+pred = list(model.predict(start=len(train), end=195))
 
 #Plot
-print(preds)
-test['Predictions'] = preds.copy()
-print(test.head())
+#print(preds)
+test['Predictions'] = preds
+test['Holt_Winter'] = pred
+#print(test.head())
 
-train['Close'].plot(label='train(Etsy)', figsize=(14, 6), title='Linear Regression (ETSY)')
-test['Close'].plot(label='test(Etsy)')
-test['Predictions'].plot(label='Predictions')
+train['Close'].plot(label='train data', figsize=(14, 6), title='AMAZON')
+test['Close'].plot(label='Actual Closing price')
+test['Predictions'].plot(label='Linear Regression Preds')
+test['Holt_Winter'].plot(label='Holt Winters Preds')
 plt.xlabel('Date')
 plt.ylabel('Closing Prices')
 plt.legend()
 plt.show()
+
+#-------------------------------------------------------------------------------------------
+    #NETFLIX
+
+train, test = split_data(ntflx)
+
+X_train = train.drop(['Symbol', 'Close'], axis=1)
+Y_train = train['Close']
+X_test = test.drop(['Symbol', 'Close'], axis=1)
+Y_test = test['Close']
+
+#--------------------------------------------------------------------------------------------
+    #implement Linear Regression
+lr = linear_model.LinearRegression()
+lr.fit(X_train, Y_train)
+
+preds = list(lr.predict(X_test))
+#print(preds)
+
+#Holt Winters
+model = ExponentialSmoothing(train['Close'], seasonal_periods=36, seasonal='add').fit()
+pred = list(model.predict(start=len(train), end=195))
+
+#Plot
+#print(preds)
+test['Predictions'] = preds
+test['Holt_Winter'] = pred
+#print(test.head())
+
+train['Close'].plot(label='train data', figsize=(14, 6), title='NETFLIX')
+test['Close'].plot(label='Actual Closing price')
+test['Predictions'].plot(label='Linear Regression Preds')
+test['Holt_Winter'].plot(label='Holt_Winter Preds')
+plt.xlabel('Date')
+plt.ylabel('Closing Prices')
+plt.legend()
+plt.show()
+
+#============================================================================================
+#X_train = X_train.astype(int)
+#Y_train = Y_train.astype(int)
+'''
+dt = DecisionTreeClassifier(min_samples_split=10, random_state=1)
+dt.fit(X_train, Y_train)
+
+X_test = X_test.astype(int)
+predict = list(dt.predict(X_test))
+
+results = correct(predict, compare)
+print("Decision Tree Preds: ", results)
+
+test['Predictions'] = predict
+train['Close'].plot(label='train(Etsy)', figsize=(14, 6), title='Decision Tree (ETSY)')
+test['Close'].plot(label='Actual Closing price')
+test['Predictions'].plot(label='Predicted Closing price')
+plt.xlabel('Date')
+plt.ylabel('Closing Prices')
+plt.legend()
+plt.show()
+'''
+#---------------------------------------------------------------------------------------
+
+ # Neural Networks LSTM
+''''
+scaler = StandardScaler()
+scaler.fit(X_train)
+
+#Apply Transformations to data:
+X_train = scaler.transform(X_train)
+X_test = scaler.transform(X_test)
+
+mlp = MLPClassifier(hidden_layer_sizes=(20, 20, 20))
+
+mlp.fit(X_train, Y_train)
+
+predict = list(mlp.predict(X_test))
+print(type(predict))
+print(predict)
+
+results = correct(predict, compare)
+print("Neural Nets Preds: ", results)
+
+test['Predictions'] = predict
+train['Close'].plot(label='train(Etsy)', figsize=(14, 6), title='Neural Net (ETSY)')
+test['Close'].plot(label='Actual Closing price')
+test['Predictions'].plot(label='Predicted Closing price')
+plt.xlabel('Date')
+plt.ylabel('Closing Prices')
+plt.legend()
+plt.show()
+
+'''
