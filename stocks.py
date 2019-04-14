@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 import pandas as pd
+import seaborn as sns
 import glob
 import numpy as np
 import datetime
@@ -184,12 +185,12 @@ plt.show()
 
 top_3 = df1.loc[(df1['Symbol'] == 'ETSY') | (df1['Symbol'] == 'NFLX') | (df1['Symbol'] == 'AMZN')]
 
-print(top_3.head())
+#print(top_3.head())
 
 returns = stock_eval(top_3)
 print()
 print("RETURN ON INVESTMENT FROM TOP PICKS: ")
-print(returns)
+#print(returns)
 
 #pick favorite stocks for analysis
 etsy = stocks.loc[stocks['Symbol'] == 'ETSY']
@@ -218,10 +219,21 @@ def split_data(df1):
 
 train, test = split_data(etsy)
 
+#print(train.head())
+pd.set_option('display.precision', 4)
+correlation = train[['Close', 'Month', 'Day_Num', 'Week_Num', 'Open', 'High', 'Low', 'Volume', '52 Wk Low', '52 Wk High']]
+corr = correlation.corr()
+'''
+sns.heatmap(corr, xticklabels=corr.columns, yticklabels=corr.columns, annot=True)
+plt.figure(figsize=(12, 6))
+plt.title("Correlation Matrix to Closing Price")
+plt.show()
+'''
 X_train = train.drop(['Symbol', 'Close'], axis=1)
 Y_train = train['Close']
 X_test = test.drop(['Symbol', 'Close'], axis=1)
 Y_test = test['Close']
+
 
 #----------------------------------------------------------
     #implement Linear Regression
@@ -331,6 +343,7 @@ plt.show()
 #X_train = X_train.astype(int)
 #Y_train = Y_train.astype(int)
 '''
+
 dt = DecisionTreeClassifier(min_samples_split=10, random_state=1)
 dt.fit(X_train, Y_train)
 
@@ -348,11 +361,11 @@ plt.xlabel('Date')
 plt.ylabel('Closing Prices')
 plt.legend()
 plt.show()
-'''
+
 #---------------------------------------------------------------------------------------
 
  # Neural Networks LSTM
-''''
+
 scaler = StandardScaler()
 scaler.fit(X_train)
 
@@ -379,5 +392,4 @@ plt.xlabel('Date')
 plt.ylabel('Closing Prices')
 plt.legend()
 plt.show()
-
 '''
